@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real-time Rekognition</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.2.0/socket.io.js"></script>
+    <style>
+      body {
+        background: rgb(255, 255, 255);
+        background: linear-gradient(
+          0deg,
+          rgba(255, 255, 255, 1) 0%,
+          rgba(236, 236, 236, 1) 35%,
+          rgba(0, 142, 171, 1) 100%
+        );
+        height: 100vh;
+      }
+      .bi-camera-fill {
+        font-size: 30px;
+      }
+      .title{
+        color: white;
+      }
+      .custom-card{
+        background-color: white;
+        color: #565656;
+        padding: 18px;
+        border-radius: 13px;
+        overflow-y: scroll;
+        height: 480px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="row">
+        <div class="col-md-12 mt-4">
+          <h3 class="title">Rekognition detectFaces</h3>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-6 mt-4">
+          <video id="video" width="640" height="480" autoplay></video>
+          <div class="mt-2">
+            <button type="button" class="btn btn-light px-5" id="captureButton">
+              <i class="bi bi-camera-fill"></i>
+            </button>
+          </div>
+        </div>
+        <div class="col-md-6 mt-4">
+          <div id="results" class="custom-card"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const video = document.getElementById("video");
+      const captureButton = document.getElementById("captureButton");
+      const socket = io();
+
+      let isCapturing = false;
+
+      const init = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        video.srcObject = stream;
+      };
+      init();
+
+      captureButton.addEventListener("click", () => {
+        isCapturing = true;
+      });
+
+      video.addEventListener("loadeddata", () => {
+        processCameraFrames();
+      });
+
+      async function processCameraFrames() {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext("2d");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        if (isCapturing) {
+          canvas.toBlob((blob) => {
+            const reader = new FileReader();
+            reader.onloadend = function () {
+              const imageBytes = new Uint8Array(reader.result);
+              socket.emit("stream", imageBytes);
+            };
+            reader.readAsArrayBuffer(blob);
+            isCapturing = false;
+          }, "image/jpeg");
+        }
+        requestAnimationFrame(processCameraFrames);
+      }
+
+      socket.on("results", (data) => {
+        const resultsDiv = document.getElementById("results");
+        resultsDiv.innerHTML = "";
+
+        if (data.faceDetails && data.faceDetails.length > 0) {
+          data.faceDetails.forEach((face, index) => {
+            const resultElement = document.createElement("div");
+            resultElement.innerHTML = `
+          <p>Cara ${index + 1}</p>
+          <p>Edad estimada: ${
+            face.AgeRange
+              ? face.AgeRange.Low + "-" + face.AgeRange.High + " años"
+              : "No disponible"
+          }</p>
+          <p>Género: ${face.Gender ? face.Gender.Value : "No disponible"}</p>
+          <p>Emoción predominante: ${
+            face.Emotions && face.Emotions.length > 0
+              ? face.Emotions[0].Type +
+                " (" +
+                face.Emotions[0].Confidence.toFixed(2) +
+                "%)"
+              : "No disponible"
+          }</p>
+          <p>Barba: ${face.Beard ? face.Beard.Value ? "Yes" : "No" : "No disponible"}</p>
+          <p>Ojos Abiertos: ${face.EyesOpen ? face.EyesOpen.Value ? "Yes" : "No" : "No disponible"}</p>
+          <hr>
+      `;
+            resultsDiv.appendChild(resultElement);
+          });
+        } else {
+          resultsDiv.innerHTML = "<p>No se detectaron caras en la imagen.</p>";
+        }
+      });
+    </script>
+  </body>
+</html>
